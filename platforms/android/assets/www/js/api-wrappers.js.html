@@ -1,0 +1,26 @@
+console.log('starting service code');
+myService = cordova.require('cordova/plugin/myService');
+
+myService.getStatus(	function(r){handleSuccess(r)},
+function(e){handleError(e) {console.log(e)}  });
+startService()
+enableTimer()
+
+
+function handleSuccess(data) {
+console.log('handle success from service');
+console.log(data)
+}
+function startService() {
+console.log('Starting Myservice');
+myService.startService(	function(r){handleSuccess(r)}, function(e){handleError(e)});
+console.log('Started Myservice');
+}
+function enableTimer() {
+console.log('enable timer Myservice');
+myService.enableTimer(	1000,
+function(r){handleSuccess(r)}, function(e){ handleError(e)});
+}
+
+
+var myService  = undefined;

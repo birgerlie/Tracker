@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <title></title>
+
+
+
+    <link rel="stylesheet" href="https://d10ajoocuyu32n.cloudfront.net/mobile/1.3.1/jquery.mobile-1.3.1.min.css">
+
+    <!-- Extra Codiqa features --><script type="text/javascript" charset="utf-8" src="js/compass-helper.js"></script>
+    <link rel="stylesheet" href="codiqa.ext.css">
+    <link rel="stylesheet" href="css/compass.css">
+
+    <!-- jQuery and jQuery Mobile -->
+    <script src="https://d10ajoocuyu32n.cloudfront.net/jquery-1.9.1.min.js"></script>
+    <script src="https://d10ajoocuyu32n.cloudfront.net/mobile/1.3.1/jquery.mobile-1.3.1.min.js"></script>
+    <script src="https://d10ajoocuyu32n.cloudfront.net/codiqa.ext.js"></script>
+    <script type="text/javascript" charset="utf-8" src="js/index.js"></script>
+    <script type="text/javascript" charset="utf-8" src="js/compass-helper.js"></script>
+    <script type="text/javascript" charset="utf-8" src="js/racemanager.js"></script>
+
+    <!--<script type="text/javascript" charset="utf-8" src="plugins/www/powermangement.js"></script>-->
+
+    <script type="text/javascript" charset="utf-8" src="cordova.js"></script>
+
+    <script type="text/javascript" src="backgroundService-3.0.0.js"></script>;
+    <script type="text/javascript" src="myService-3.0.0.js"></script>
+
+    <!--<script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>-->
+    <script type="text/javascript">
+          app.initialize();
+          console.log("startup");
+          var skipper = "Skipper Name"
+          var yacht = "Yacht Name"
+          var sail_number = "Sail Number"
+          var transmit = false;
+          var watchID = -1;
+          var server = "http://ec2-50-112-26-56.us-west-2.compute.amazonaws.com:8888"
+          //var server = "http://localhost:8888"
+
+
+          var selected_mark = undefined;
+          var raceId = undefined;
+
+          var map;
+          var last_position = undefined;
+          var watcher_running = false;
+          var gps_error_count = 0;
+
+          var raceManager = undefined;
+          var compassHelper;
+          var positionService;
+
+        $(function(){
+            raceManager = new RaceManager();
+              document.addEventListener("deviceready", onDeviceReady, false);
+
+              raceManager.loadRegattas(function(data){
+                    list = $("#selectmenu2")
+                    list.empty()
+                    for(var key in data){
+                      list.append("<option value=" + data[key]._id + ">" + data[key].title + "</option>");
+                    }
+              });
+
+              $( "#selectmenu2" ).change(function() {
+                raceManager.raceId = $("#selectmenu2").val()
+                raceManager.raceName =  $("#selectmenu2 :selected").text()
+              });
+
+            $( "#ops" ).on( "pagebeforeshow", function( event ) {
+                raceManager.getRaceMarks( loadMarks )
+                compassHelper = new CompassHelper();
+            	compassHelper.run();
+            });
+
+
+
+
+
+        });
+
+function successPowerCallback(){
+ alert('acquire');
+}
+
+function loadMarks(marks){
+    _marks = $('#marks')
+    _marks.empty()
+
+  if (marks == undefined)
+      return;
+
+    _marks = $('#marks')
+    _marks.empty()
+    _marks.append('<li data-role="list-divider" role="heading">Marks</li>')
+    for(i=0;i< marks.length;i++){
+        _marks.append('<li data-theme="c" class="mrk " data-transition="none"><a data-rel="dialog" href="#mark-dialog" onCLick="raceManager.setMarkPosition(' + marks[i].m_id + ')" >Set mark '+ marks[i].m_id+ ' position ( Lat: '+ marks[i].lat+ ' Lng: ' + marks[i].lng+ ' )</a></li>');
+    }
+    $('#marks').listview('refresh');
+    $('.ops-title').text(raceManager.raceName)
+}
+
+
+
+
+function failurePowerCallback(){alert('acquire failed');}
+
+function onDeviceReady(){
+    loadData();
+
+
+    positionService = PositionService()
+    positionService.start();
+    positionService.status();
+
+
+    $("#transmit_position").on( "change" , function(){
+                     positionService.status();
+
+
+
+                    if( $( "#transmit_position" ).val()=='on' ){
+                       console.log("start transmit selected");
+                       transmit = true;
+                       console.log("aquire powerManagement lock");
+                       //cordova.exec(successPowerCallback, failurePowerCallback, 'PowerManagement', 'acquire', []);
+                       //startGpsWatcher()
+                    }
+                    else {
+                      console.log("stop transmit selected");
+                      transmit = !transmit
+                      if( watchID != undefined ){
+                        console.log("stop watching GPS position");
+                        navigator.geolocation.clearWatch(watchID);
+                        watchID = undefined;
+                      }
+                       //we dont need the extra power from the os so we relase our lock
+                      //cordova.exec(successPowerCallback, failurePowerCallback, 'PowerManagement', 'release', []);
+                      console.log("release power lock");
+                    };
+    });
+}
+
+function startGpsWatcher(){
+    console.log('calling watch position');
+    options = { enableHighAccuracy: true,maximumAge: 300, timeout: 1000};
+    watchID = navigator.geolocation.watchPosition(onGpsSuccess, onGpsError, options );
+    console.log('calling watch position done');
+}
+
+
+function onGpsError(error) {
+    gps_error_count++;
+    d = '.'
+    for(i=0;i< gps_error_count % 5 ; i++){
+        d +=d
+    }
+    console.log("error called:" + error.message + ' ' + d );
+    $('#geolocation').empty();
+    $('#geolocation').text(error.message + ' ' + d);
+}
+
+
+
+function onGpsSuccess(position) {
+    console.log("gps success:" + position);
+    var element = $('#geolocation');
+    element.empty();
+    element.html('Latitude: '  + position.coords.latitude      + '<br />' +
+                        'Longitude: ' + position.coords.longitude     + '<br />' +
+                        '<hr/>');
+
+    last_position = position
+    if(transmit)
+        raceManager.reportPosition(raceManager.buildData(position));
+}
+
+
+
+function saveData(){
+      sail_number = $('#frm_number').val();
+      skipper = $('#frm_skipper').val();
+      yacht = $('#frm_yacht_name').val();
+
+      window.localStorage.setItem("skipper", skipper);
+      window.localStorage.setItem("yacht", yacht);
+      window.localStorage.setItem("sail_number", sail_number );
+
+      loadData()
+
+}
+function loadData(){
+        skipper = window.localStorage.getItem("skipper");
+        yacht = window.localStorage.getItem("yacht");
+        sail_number = window.localStorage.getItem("sail_number");
+        $('#frm_number').val( sail_number )
+        $('#frm_skipper').val(skipper )
+        $('#frm_yacht_name').val(yacht )
+}
+
+</script>
+</head>
+<body>
+
+<div data-role="page" id="home" class="app" >
+    <div data-theme="a" data-role="header">
+        <h3>
+           Race Tracker
+        </h3>
+    </div>
+    <div data-role="content" data-theme="c">
+        <form >
+            <div data-role="fieldcontain">
+                <label for="selectmenu2">
+                    Velg Klasse:
+                </label>
+                <select id="selectmenu2" name="Select Race">
+                </select>
+            </div>
+            <div data-role="fieldcontain">
+                <label for="transmit_position">
+                    Send Posisjon
+                </label>
+                <select name="toggleswitch1" id="transmit_position" data-theme="" data-role="slider">
+                    <option value="off" >
+                        Off
+                    </option>
+                    <option value="on">
+                        On
+                    </option>
+                </select>
+            </div>
+        </form>
+
+        <p id="geolocation">Watching geolocation...</p>
+    </div>
+    <div data-role="footer" data-position="fixed">
+        <div data-role="navbar" data-iconpos="bottom" class="ui-state-persist">
+            <ul>
+                <li><a href="#home" data-icon="grid" >Home</a></li>
+                <li><a href="#ops" data-icon="star" >Bane</a></li>
+                <li><a href="#settings" data-icon="gear" data-transition="slideup">Setup</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+
+<div data-role="page" id="ops" >
+    <div data-theme="a" data-role="header">
+        <h3 class="ops-title"></h3>
+    </div>
+    <div data-role="content">
+        <div id="map-canvas"></div>
+        <a data-role="button" data-icon="arrow-u" data-iconpos="left" data-rel="dialog" href="#wind-angle-dialog" id="btn-set-wind">
+            Set Wind Angle
+        </a>
+        <div class="ui-grid-a">
+
+            <div class="ui-block-a">
+                <a id="#btn-port" data-role="button" href="#page1" data-icon="arrow-l"
+                   data-iconpos="left">
+                    Set Port End
+                </a>
+            </div>
+            <div class="ui-block-b">
+                <a id="btn-port" data-role="button" href="#page1" data-icon="arrow-r"
+                   data-iconpos="left">
+                    Set Starboard End
+                </a>
+            </div>
+        </div>
+        <ul data-role="listview" data-divider-theme="b" data-inset="true" id="marks">
+        </ul>
+        <p id="geolocation">Watching geolocation...</p>
+    </div>
+
+    <div data-theme="a" data-role="footer" data-position="fixed">
+        <div data-role="navbar" data-iconpos="bottom" class="ui-state-persist">
+            <ul>
+                <li><a href="#home" data-icon="grid" data-transition="slideup">Home</a></li>
+                <li><a href="#ops" data-icon="star" data-transition="slideup">Bane</a></li>
+                <li><a href="#settings" data-icon="gear" data-transition="slideup">Setup</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div data-role="page" data-theme="b" id="mark-dialog">
+    <div data-role="header" data-theme="a">
+        <h3 class="mark-dialog-title">Update Mark Position</h3>
+    </div>
+    <div data-role="content" data-theme="c">
+        <a href="#ops" data-rel="back" data-role="button" onclick="raceManager.updateMarkPosition()"> Update </a>
+        <a href="#ops" data-rel="back" data-role="button"> Cancel</a>
+    </div>
+</div>
+
+<div data-role="page" data-theme="b" id="wind-angle-dialog">
+    <div data-role="header" data-theme="a">
+        <h3 class="mark-dialog-title">Set wind angle</h3>
+    </div>
+    <div data-role="content" data-theme="c">
+        <a href="#ops" data-rel="back" data-role="button" > Update </a>
+        <a href="#ops" data-rel="back" data-role="button"> Cancel</a>
+
+        <!--<button class="button dh" id="watchButton">Start Compass</button>-->
+        <!--<button class="button dh" id="refreshButton">Current Orientation</button>-->
+    </div>
+    <div class="result-area ch70">
+        <div class="results">
+            <div class="mapCompassFrame">
+                <div id="compass" class="mapCompass"></div>
+            </div>
+            <div id="result" class="desc"></div>
+        </div>
+        <div class="separator"></div>
+    </div>
+</div>
+
+    </div>
+</div>
+
+<div data-role="page" id="settings">
+    <div data-theme="a" data-role="header">
+        <h3>
+            Settings
+        </h3>
+    </div>
+
+    <div data-role="content" data-theme="c">
+        <form >
+            <div data-role="fieldcontain">
+                <label for="frm_number">
+                    Seilnummer
+                </label>
+                <input name="" id="frm_number" placeholder="NOR1234" value="" type="text">
+            </div>
+            <div data-role="fieldcontain">
+                <label for="frm_skipper">
+                    Skipper
+                </label>
+                <input name="" id="frm_skipper" placeholder="Ola Normann" value="" type="text">
+            </div>
+            <div data-role="fieldcontain">
+                <label for="frm_yacht_name">
+                    Båtnavn
+                </label>
+                <input name="" id="frm_yacht_name" placeholder="navn på båt" value="" type="text">
+            </div>
+            <input type="Button" value="Lagre" onClick='saveData()'>
+        </form>
+    </div>
+
+    <div data-role="footer" data-position="fixed">
+        <div data-role="navbar" data-iconpos="bottom" class="ui-state-persist">
+            <ul>
+                <li><a href="#home" data-icon="grid" data-transition="slideup">Home</a></li>
+                <li><a href="#ops" data-icon="star" data-transition="slideup">Bane</a></li>
+                <li><a href="#settings" data-icon="gear" data-transition="slideup" >Setup</a></li>
+            </ul>
+        </div>
+     </div>
+</div>
+</body>
+</html>
